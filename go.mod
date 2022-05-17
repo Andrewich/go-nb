@@ -6,6 +6,7 @@ require (
 	github.com/go-openapi/runtime v0.24.1
 	github.com/netbox-community/go-netbox v0.0.0-20210916100335-c6261e6b3c39
 	github.com/olekukonko/tablewriter v0.0.5
+	github.com/urfave/cli/v2 v2.6.0
 )
 
 require (
@@ -30,7 +31,6 @@ require (
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
-	github.com/urfave/cli/v2 v2.6.0 // indirect
 	go.mongodb.org/mongo-driver v1.8.3 // indirect
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd // indirect
 	golang.org/x/text v0.3.7 // indirect
