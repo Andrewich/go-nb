@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"fmt"
+	"encoding/csv"
 
 	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/netbox-community/go-netbox/netbox/client"
@@ -15,7 +17,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func main() {
+func main() {	
 	app := &cli.App{
 		Name:  "go-nb",
 		Usage: "",
@@ -133,7 +135,9 @@ func main() {
 						Usage:   "list VRFs",
 						Action:  list_vrfs,
 						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "output", Value: "table", Usage: "Output Format (csv, plain, table)", Aliases: []string{"o"}},
 							&cli.BoolFlag{Name: "plain", Usage: "Output Plain text", Aliases: []string{"p"}},
+							&cli.BoolFlag{Name: "csv", Usage: "Output CSV Format"},
 						},
 					},
 				},
@@ -349,7 +353,12 @@ func add_ip(context *cli.Context) error {
 		return err
 	}
 
-	table := tablewriter.NewWriter(os.Stdout)
+	var table *tablewriter.Table
+	if context.Bool("csv") {
+		table, _ = tablewriter.NewCSV(os.Stdout, "test_info.csv", true)
+	} else {
+		table = tablewriter.NewWriter(os.Stdout)
+	}
 	table.SetAlignment(tablewriter.ALIGN_LEFT)
 
 	table.SetCenterSeparator("")
@@ -368,7 +377,11 @@ func del_ip(context *cli.Context) error {
 	return errors.New("Unimplemented")
 }
 
-func list_vrfs(context *cli.Context) error {
+func list_vrfs(context *cli.Context) error {	
+	if !isValidOutput(context.String("output")) {
+		return errors.New("output is not valid (use: table (default), plain, csv)")
+	}
+
 	u, err := url.Parse(context.String("nb_host"))
 	if err != nil {
 		return err
@@ -378,21 +391,55 @@ func list_vrfs(context *cli.Context) error {
 
 	transport.SetDebug(context.Bool("debug"))
 
-	c := client.New(transport, nil)
-
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"ID", "VRF"})
-
+	c := client.New(transport, nil)		
+	
 	vrfs, err := c.Ipam.IpamVrfsList(nil, nil)
 	if err != nil {
 		return err
 	}
 
+	var records [][]string
 	for _, v := range vrfs.Payload.Results {
-		table.Append([]string{strconv.FormatInt(v.ID, 10), *v.Name})
+		records = append(records, []string{strconv.FormatInt(v.ID, 10), *v.Name})
 	}
 
-	table.Render()
+	switch context.String("output") {
+		case "table": {
+			table := tablewriter.NewWriter(os.Stdout)	
+			table.SetHeader([]string{"ID", "VRF"})
 
+			table.AppendBulk(records)
+
+			table.Render()
+		}
+		case "csv": {
+			w := csv.NewWriter(os.Stdout)
+    		defer w.Flush()
+
+			w.Write([]string{"ID", "VRF"})
+			for _, record := range records {
+				if err := w.Write(record); err != nil {
+					log.Fatalln("error writing record to file", err)
+				}
+			}
+		}
+		case "plain": {
+				for _, record := range records {
+					fmt.Println(record[0], record[1])			
+				}
+			}
+	}
+	
 	return nil
+}
+
+func isValidOutput(output string) bool {
+    switch output {
+    case
+        "table",
+        "plain",
+        "csv":
+        return true
+    }
+    return false
 }
