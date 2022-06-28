@@ -6,8 +6,6 @@ import (
 	"net/url"
 	"os"
 	"strconv"
-	"fmt"
-	"encoding/csv"
 
 	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/netbox-community/go-netbox/netbox/client"
@@ -17,10 +15,11 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func main() {	
+func main() {
 	app := &cli.App{
-		Name:  "go-nb",
-		Usage: "",
+		Name:                 "go-nb",
+		Usage:                "",
+		EnableBashCompletion: true,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     "nb_host",
@@ -102,6 +101,16 @@ func main() {
 						},
 					},
 					{
+						Name:    "check",
+						Aliases: []string{"c"},
+						Usage:   "check IP Addresses",
+						Action:  check_ip,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "vrfid", Value: "17", Aliases: []string{"i"}},
+							&cli.StringFlag{Name: "address", Aliases: []string{"a"}},
+						},
+					},
+					{
 						Name:    "add",
 						Aliases: []string{"a"},
 						Usage:   "add IP Addresses",
@@ -135,9 +144,7 @@ func main() {
 						Usage:   "list VRFs",
 						Action:  list_vrfs,
 						Flags: []cli.Flag{
-							&cli.StringFlag{Name: "output", Value: "table", Usage: "Output Format (csv, plain, table)", Aliases: []string{"o"}},
 							&cli.BoolFlag{Name: "plain", Usage: "Output Plain text", Aliases: []string{"p"}},
-							&cli.BoolFlag{Name: "csv", Usage: "Output CSV Format"},
 						},
 					},
 				},
@@ -179,7 +186,7 @@ func list_prefixes(context *cli.Context) error {
 
 	vrf_id := context.String("vrfid")
 	mask_length := context.String("mask")
-	var limit int64 = 1000
+	var limit int64 = 2000
 
 	req := ipam.NewIpamPrefixesListParams()
 	if vrf_id != "1" {
@@ -313,6 +320,56 @@ func search_ip(context *cli.Context) error {
 	return nil
 }
 
+func check_ip(context *cli.Context) error {
+	u, err := url.Parse(context.String("nb_host"))
+	if err != nil {
+		return err
+	}
+	transport := httptransport.New(u.Host, client.DefaultBasePath, []string{u.Scheme})
+	transport.DefaultAuthentication = httptransport.APIKeyAuth("Authorization", "header", "Token "+context.String("nb_token"))
+
+	c := client.New(transport, nil)
+
+	table := tablewriter.NewWriter(os.Stdout)
+
+	table.SetAlignment(tablewriter.ALIGN_LEFT)
+	table.SetColumnSeparator("")
+	table.SetRowSeparator("")
+	table.SetCenterSeparator("")
+	table.SetHeaderLine(false)
+	table.SetBorder(false)
+	table.SetTablePadding("\t")
+	table.SetNoWhiteSpace(true)
+	//table.SetRowLine(true)
+
+	// Change table lines
+
+	vrf_id := context.String("vrfid")
+	ip_address := context.String("address")
+	var limit int64 = 1000
+
+	req := ipam.NewIpamIPAddressesListParams()
+	req.VrfID = &vrf_id
+	req.Address = &ip_address
+	//req.MaskLength = &mask_length
+	req.Limit = &limit
+	pl, err := c.Ipam.IpamIPAddressesList(req, nil)
+	if err != nil {
+		return err
+	}
+
+	count := pl.Payload.Count
+	if *count > 0 {
+		table.Append([]string{context.String("address"), "Exist"})
+	} else {
+		table.Append([]string{context.String("address"), "notExist"})
+	}
+
+	table.Render()
+
+	return nil
+}
+
 func add_ip(context *cli.Context) error {
 	u, err := url.Parse(context.String("nb_host"))
 	if err != nil {
@@ -353,12 +410,7 @@ func add_ip(context *cli.Context) error {
 		return err
 	}
 
-	var table *tablewriter.Table
-	if context.Bool("csv") {
-		table, _ = tablewriter.NewCSV(os.Stdout, "test_info.csv", true)
-	} else {
-		table = tablewriter.NewWriter(os.Stdout)
-	}
+	table := tablewriter.NewWriter(os.Stdout)
 	table.SetAlignment(tablewriter.ALIGN_LEFT)
 
 	table.SetCenterSeparator("")
@@ -377,11 +429,7 @@ func del_ip(context *cli.Context) error {
 	return errors.New("Unimplemented")
 }
 
-func list_vrfs(context *cli.Context) error {	
-	if !isValidOutput(context.String("output")) {
-		return errors.New("output is not valid (use: table (default), plain, csv)")
-	}
-
+func list_vrfs(context *cli.Context) error {
 	u, err := url.Parse(context.String("nb_host"))
 	if err != nil {
 		return err
@@ -391,55 +439,21 @@ func list_vrfs(context *cli.Context) error {
 
 	transport.SetDebug(context.Bool("debug"))
 
-	c := client.New(transport, nil)		
-	
+	c := client.New(transport, nil)
+
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetHeader([]string{"ID", "VRF"})
+
 	vrfs, err := c.Ipam.IpamVrfsList(nil, nil)
 	if err != nil {
 		return err
 	}
 
-	var records [][]string
 	for _, v := range vrfs.Payload.Results {
-		records = append(records, []string{strconv.FormatInt(v.ID, 10), *v.Name})
+		table.Append([]string{strconv.FormatInt(v.ID, 10), *v.Name})
 	}
 
-	switch context.String("output") {
-		case "table": {
-			table := tablewriter.NewWriter(os.Stdout)	
-			table.SetHeader([]string{"ID", "VRF"})
+	table.Render()
 
-			table.AppendBulk(records)
-
-			table.Render()
-		}
-		case "csv": {
-			w := csv.NewWriter(os.Stdout)
-    		defer w.Flush()
-
-			w.Write([]string{"ID", "VRF"})
-			for _, record := range records {
-				if err := w.Write(record); err != nil {
-					log.Fatalln("error writing record to file", err)
-				}
-			}
-		}
-		case "plain": {
-				for _, record := range records {
-					fmt.Println(record[0], record[1])			
-				}
-			}
-	}
-	
 	return nil
-}
-
-func isValidOutput(output string) bool {
-    switch output {
-    case
-        "table",
-        "plain",
-        "csv":
-        return true
-    }
-    return false
 }
