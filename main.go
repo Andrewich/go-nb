@@ -19,6 +19,7 @@ func main() {
 	app := &cli.App{
 		Name:                 "go-nb",
 		Usage:                "",
+		Version:              "v22.07.07alpha",
 		EnableBashCompletion: true,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -107,7 +108,7 @@ func main() {
 						Action:  check_ip,
 						Flags: []cli.Flag{
 							&cli.StringFlag{Name: "vrfid", Value: "17", Aliases: []string{"i"}},
-							&cli.StringFlag{Name: "address", Aliases: []string{"a"}},
+							&cli.StringFlag{Name: "address", Required: true, Aliases: []string{"a"}},
 						},
 					},
 					{
